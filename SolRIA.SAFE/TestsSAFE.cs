@@ -1,3 +1,8 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using SolRIA.Sign.SAFE.Interfaces;
+using SolRIA.Sign.SAFE.Models;
+
 namespace SAFE;
 
 public static class TestsSAFE
@@ -6,15 +11,55 @@ public static class TestsSAFE
     public static readonly string destEmpty = @"E:\Faturação eletronica\Assinatura eletronica SAFE\tests\FT23-68-empty.pdf";
     public static readonly string destSigned = @"E:\Faturação eletronica\Assinatura eletronica SAFE\tests\FT23-68-signed.pdf";
 
+    private static ISAFE_Connect client;
+    private static IServiceProvider InitServices()
+    {
+        //start the services container
+        return new HostBuilder()
+            .ConfigureServices(s =>
+            {
+                var dbConfig = new DatabaseConfiguration
+                {
+                    ConnectionString = @"Data Source=c:\safe.db"
+                };
+
+                var basicAuth = new BasicAuth
+                {
+                    Username = "clientTest",
+                    Password = "Test"
+                };
+
+                s.AddHttpClient<SAFE_Connect>(c =>
+                {
+                    c.BaseAddress = new Uri("https://pprsafe.autenticacao.gov.pt");
+                });
+
+                s.AddSingleton(dbConfig);
+                s.AddSingleton(basicAuth);
+
+                s.AddSingleton<ISAFE_Connect, SAFE_Connect>();
+            })
+            .Build()
+            .Services;
+    }
     public static async Task SignDocument()
     {
+        var serviceProvider = InitServices();
+
+        client = serviceProvider.GetService<ISAFE_Connect>();
+        client.InitTokens();
+
         // create a pdf with empty signature
-        var initialHash = SAFE_Sign.CreatePdfEmptySignature(src, destEmpty);
+        //Get the stream from a document.
+        using var documentStream = new FileStream(src, FileMode.Open, FileAccess.Read);
+        using var inputFileStream = new FileStream(destEmpty, FileMode.Create, FileAccess.ReadWrite);
+
+        var initialHash = client.CreatePdfEmptySignature(documentStream, inputFileStream);
 
         // calculate the has of the pdf document with a empty signature
         var hashes = new string[]
         {
-            SAFE_Sign.CalculateHash(initialHash),
+            client.CalculateHash(initialHash),
         };
 
         // get the original filename
@@ -26,55 +71,51 @@ public static class TestsSAFE
         // processId must be unique to one sign session
         var processId = Guid.NewGuid().ToString();
 
-        // build the http client used for all comunications
-        var httpClient = new HttpClient();
-
         //TODO: the credential should be save o on the config for this client
         string credentialID;
 
         try
         {
-            credentialID = await SAFE_ListCredential(processId, clientName, httpClient);
+            credentialID = await SAFE_ListCredential(processId, clientName);
         }
-        catch (SolRIA.Sign.SAFE.Models.ApiException ex) when
-            (ex.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.BadRequest)
+        catch (ApiException ex) when (ex.StatusCode is
+            System.Net.HttpStatusCode.Unauthorized or
+            System.Net.HttpStatusCode.BadRequest)
         {
             credentialID = "b63db1b2-b6e6-4124-8842-a0273d0880cb";
 
             // refresh token
-            await SAFE_RefreshToken(processId, credentialID, clientName, httpClient);
+            await SAFE_RefreshToken(processId, credentialID, clientName);
 
-            credentialID = await SAFE_ListCredential(processId, clientName, httpClient);
+            credentialID = await SAFE_ListCredential(processId, clientName);
         }
 
         Thread.Sleep(1000);
 
-        var algo = await SAFE_InfoCredentials(credentialID, processId, clientName, httpClient);
+        var algo = await SAFE_InfoCredentials(credentialID, processId, clientName);
 
         Thread.Sleep(1000);
 
-        await SAFE_Authorize(hashes, documentNames, credentialID, processId, clientName, httpClient);
+        await SAFE_Authorize(hashes, documentNames, credentialID, processId, clientName);
 
         Thread.Sleep(1000);
 
-        var sad = await SAFE_VerifyAuth(processId, httpClient);
+        var sad = await SAFE_VerifyAuth(processId);
 
         Thread.Sleep(1000);
 
-        await SAFE_SignHash(sad, hashes, credentialID, processId, clientName, algo, httpClient);
+        await SAFE_SignHash(sad, hashes, credentialID, processId, clientName, algo);
 
         Thread.Sleep(1000);
 
-        var signedHash = await SAFE_VerifyHash(processId, httpClient);
+        var signedHash = await SAFE_VerifyHash(processId);
 
         // after loading the hash, create the file with the signed hash returned from the service
-        SAFE_Sign.CreatePdfSigned(signedHash, destEmpty, destSigned);
+        client.CreatePdfSigned(signedHash, destEmpty, destSigned);
     }
-    public static async Task SAFE_Info(HttpClient httpClient)
+    public static async Task SAFE_Info()
     {
-        var client = new SAFE_Connect();
-
-        var response = await client.Info(httpClient);
+        var response = await client.Info();
 
         Console.WriteLine("Description: {0}", response.Description);
         Console.WriteLine("Name: {0}", response.Name);
@@ -96,43 +137,38 @@ public static class TestsSAFE
         }
     }
 
-    public static async Task SAFE_RefreshToken(string processId, string credentialID, string clientName, HttpClient httpClient)
+    private static async Task SAFE_RefreshToken(string processId, string credentialID, string clientName)
     {
-        var client = new SAFE_Connect();
-
-        var body = new SolRIA.Sign.SAFE.Models.UpdateTokenRequestDto
+        var body = new UpdateTokenRequestDto
         {
             CredentialID = credentialID,
-            ClientData = new SolRIA.Sign.SAFE.Models.ClientDataRequestBaseDto
+            ClientData = new ClientDataRequestBaseDto
             {
                 ClientName = clientName,
                 ProcessId = processId
             }
         };
 
-        var response = await client.UpdateToken(body, httpClient);
+        var response = await client.UpdateToken(body);
 
         Console.WriteLine("NewAccessToken: {0}", response.NewAccessToken);
         Console.WriteLine("NewRefreshToken: {0}", response.NewRefreshToken);
 
-        client.UpdateAccessToken(response.NewAccessToken);
-        client.UpdateRefreshToken(response.NewRefreshToken);
+        client.UpdateTokens(response.NewAccessToken, response.NewRefreshToken);
     }
 
-    private static async Task<string> SAFE_ListCredential(string processId, string clientName, HttpClient httpClient)
+    private static async Task<string> SAFE_ListCredential(string processId, string clientName)
     {
-        var client = new SAFE_Connect();
-
-        var body = new SolRIA.Sign.SAFE.Models.CredentialsListRequestDto
+        var body = new CredentialsListRequestDto
         {
-            ClientData = new SolRIA.Sign.SAFE.Models.ClientDataRequestBaseDto
+            ClientData = new ClientDataRequestBaseDto
             {
                 ProcessId = processId,
                 ClientName = clientName
             }
         };
 
-        var response = await client.ListCredential(body, httpClient);
+        var response = await client.ListCredential(body);
 
         Console.WriteLine("CredentialIDs:");
         foreach (var item in response.CredentialIDs)
@@ -143,15 +179,13 @@ public static class TestsSAFE
         return response.CredentialIDs.FirstOrDefault();
     }
 
-    private static async Task<string> SAFE_InfoCredentials(string credentialID, string processId, string clientName, HttpClient httpClient)
+    private static async Task<string> SAFE_InfoCredentials(string credentialID, string processId, string clientName)
     {
-        var client = new SAFE_Connect();
-
-        var body = new SolRIA.Sign.SAFE.Models.CredentialsInfoRequestDto
+        var body = new CredentialsInfoRequestDto
         {
             Certificates = "chain",
             CredentialID = credentialID,
-            ClientData = new SolRIA.Sign.SAFE.Models.ClientDataRequestBaseDto
+            ClientData = new ClientDataRequestBaseDto
             {
                 ProcessId = processId,
                 ClientName = clientName
@@ -161,7 +195,7 @@ public static class TestsSAFE
         Console.WriteLine("Call with CredentialID: {0}", body.CredentialID);
         Console.WriteLine("Call with ProcessId: {0}", body.ClientData.ProcessId);
 
-        var response = await client.InfoCredentials(body, httpClient);
+        var response = await client.InfoCredentials(body);
 
         Console.WriteLine("AuthMode: {0}", response.AuthMode);
         Console.WriteLine("Multisign: {0}", response.Multisign);
@@ -186,15 +220,13 @@ public static class TestsSAFE
         return response.Key.Algo;
     }
 
-    private static async Task SAFE_Authorize(string[] hashes, string[] documentNames, string credentialID, string processId, string clientName, HttpClient httpClient)
+    private static async Task SAFE_Authorize(string[] hashes, string[] documentNames, string credentialID, string processId, string clientName)
     {
-        var client = new SAFE_Connect();
-
-        var body = new SolRIA.Sign.SAFE.Models.SignHashAuthorizationRequestDto
+        var body = new SignHashAuthorizationRequestDto
         {
             CredentialID = credentialID,
             NumSignatures = documentNames.Length,
-            ClientData = new SolRIA.Sign.SAFE.Models.SignHashAuthorizationClientDataRequestDto
+            ClientData = new SignHashAuthorizationClientDataRequestDto
             {
                 ProcessId = processId,
                 ClientName = clientName,
@@ -203,30 +235,26 @@ public static class TestsSAFE
             Hashes = hashes
         };
 
-        await client.Authorize(body, httpClient);
+        await client.Authorize(body);
     }
 
-    private static async Task<string> SAFE_VerifyAuth(string processId, HttpClient httpClient)
+    private static async Task<string> SAFE_VerifyAuth(string processId)
     {
-        var client = new SAFE_Connect();
-
-        var response = await client.VerifyAuth(processId, httpClient);
+        var response = await client.VerifyAuth(processId);
 
         Console.WriteLine("SAD: {0}", response.Sad);
 
         return response.Sad;
     }
 
-    private static async Task SAFE_SignHash(string sad, string[] hashes, string credentialID, string processId, string clientName, string algo, HttpClient httpClient)
+    private static async Task SAFE_SignHash(string sad, string[] hashes, string credentialID, string processId, string clientName, string algo)
     {
-        var client = new SAFE_Connect();
-
-        var body = new SolRIA.Sign.SAFE.Models.SignHashRequestDto
+        var body = new SignHashRequestDto
         {
             Sad = sad,
             CredentialID = credentialID,
             SignAlgo = algo,
-            ClientData = new SolRIA.Sign.SAFE.Models.ClientDataRequestBaseDto
+            ClientData = new ClientDataRequestBaseDto
             {
                 ProcessId = processId,
                 ClientName = clientName,
@@ -235,14 +263,12 @@ public static class TestsSAFE
         };
 
         Console.WriteLine("ProcessId: {0}", body.ClientData.ProcessId);
-        await client.SignHash(body, httpClient);
+        await client.SignHash(body);
     }
 
-    private static async Task<string> SAFE_VerifyHash(string processId, HttpClient httpClient)
+    private static async Task<string> SAFE_VerifyHash(string processId)
     {
-        var client = new SAFE_Connect();
-
-        var response = await client.VerifyHash(processId, httpClient);
+        var response = await client.VerifyHash(processId);
 
         Console.WriteLine("Signatures:");
         foreach (var item in response.Signatures)
