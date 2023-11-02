@@ -1,40 +1,46 @@
+using SolRIA.SAFE.Models;
 using SolRIA.Sign.SAFE.Models;
+using System.Security.Cryptography.X509Certificates;
 
 namespace SolRIA.Sign.SAFE.Interfaces;
 
 public interface ISAFE_Connect
 {
-    void InitTokens();
-    void UpdateTokens(string newAccessToken, string newRefreshToken);
+    void Init(BasicAuth auth);
 
-    Task<UpdateTokenResponseDto> UpdateToken(UpdateTokenRequestDto body);
-    Task<UpdateTokenResponseDto> UpdateToken(UpdateTokenRequestDto body, CancellationToken cancellationToken);
+    string CreateAccountUrl(AccountCreationRequest creationRequest, string clientId, string clientName);
+    string ParseOauthResult(string url);
+    Task<AttributeManagerResult> SendCreateAccountRequest(string token);
+    Task<AccountCreationResult> ReadAccount(AttributeManagerResult attribute);
 
-    Task<string> CancelAccount(CancelCitizenAccountRequestDto body);
-    Task<string> CancelAccount(CancelCitizenAccountRequestDto body, CancellationToken cancellationToken);
+    Task<UpdateTokenResponseDto> UpdateToken(UpdateTokenRequestDto body, Config config);
+    Task<UpdateTokenResponseDto> UpdateToken(UpdateTokenRequestDto body, Config config, CancellationToken cancellationToken);
 
-    Task<InfoResponseDto> Info();
-    Task<InfoResponseDto> Info(CancellationToken cancellationToken);
+    Task<string> CancelAccount(CancelCitizenAccountRequestDto body, Config config);
+    Task<string> CancelAccount(CancelCitizenAccountRequestDto body, Config config, CancellationToken cancellationToken);
 
-    Task<CredentialsListResponseDto> ListCredential(CredentialsListRequestDto body);
-    Task<CredentialsListResponseDto> ListCredential(CredentialsListRequestDto body, CancellationToken cancellationToken);
+    Task<InfoResponseDto> Info(Config config);
+    Task<InfoResponseDto> Info(Config config, CancellationToken cancellationToken);
 
-    Task<CredentialsInfoResponseDto> InfoCredentials(CredentialsInfoRequestDto body);
-    Task<CredentialsInfoResponseDto> InfoCredentials(CredentialsInfoRequestDto body, CancellationToken cancellationToken);
+    Task<CredentialsListResponseDto> ListCredential(CredentialsListRequestDto body, Config config);
+    Task<CredentialsListResponseDto> ListCredential(CredentialsListRequestDto body, Config config, CancellationToken cancellationToken);
 
-    Task<string> Authorize(SignHashAuthorizationRequestDto body);
-    Task<string> Authorize(SignHashAuthorizationRequestDto body, CancellationToken cancellationToken);
+    Task<CredentialsInfoResponseDto> InfoCredentials(CredentialsInfoRequestDto body, Config config);
+    Task<CredentialsInfoResponseDto> InfoCredentials(CredentialsInfoRequestDto body, Config config, CancellationToken cancellationToken);
 
-    Task<SignHashAuthorizationResponseDto> VerifyAuth(string processId);
-    Task<SignHashAuthorizationResponseDto> VerifyAuth(string processId, CancellationToken cancellationToken);
+    Task<string> Authorize(SignHashAuthorizationRequestDto body, Config config);
+    Task<string> Authorize(SignHashAuthorizationRequestDto body, Config config, CancellationToken cancellationToken);
 
-    Task<string> SignHash(SignHashRequestDto body);
-    Task<string> SignHash(SignHashRequestDto body, CancellationToken cancellationToken);
+    Task<SignHashAuthorizationResponseDto> VerifyAuth(string processId, Config config);
+    Task<SignHashAuthorizationResponseDto> VerifyAuth(string processId, Config config, CancellationToken cancellationToken);
 
-    Task<SignHashResponseDto> VerifyHash(string processId);
-    Task<SignHashResponseDto> VerifyHash(string processId, CancellationToken cancellationToken);
+    Task<string> SignHash(SignHashRequestDto body, Config config);
+    Task<string> SignHash(SignHashRequestDto body, Config config, CancellationToken cancellationToken);
 
-    byte[] CreatePdfEmptySignature(Stream documentStream, Stream inputFileStream);
-    void CreatePdfSigned(string signedHash, string emptyPdfSignature, string outputFile);
+    Task<SignHashResponseDto> VerifyHash(string processId, Config config);
+    Task<SignHashResponseDto> VerifyHash(string processId, Config config, CancellationToken cancellationToken);
+
+    byte[] CreatePdfEmptySignature(Stream documentStream, Stream inputFileStream, List<X509Certificate2> certificates, SignatureConfig signatureConfig);
+    void CreatePdfSigned(string signedHash, Stream inputFileStream, Stream outputFileStream, List<X509Certificate2> certificates);
     string CalculateHash(byte[] message);
 }

@@ -11,7 +11,7 @@ public class ApiException : Exception
     public IReadOnlyDictionary<string, IEnumerable<string>> Headers { get; private set; }
 
     public ApiException(string message, HttpStatusCode statusCode, string response, IReadOnlyDictionary<string, IEnumerable<string>> headers, Exception innerException)
-        : base(message + "\n\nStatus: " + (int)statusCode + "\nResponse: \n" + ((response == null) ? "(null)" : response[..Math.Min(512, response.Length)]), innerException)
+        : base($"{message}\n\nStatus: {(int)statusCode}\nResponse: \n{((response == null) ? "(null)" : response)}", innerException)
     {
         StatusCode = statusCode;
         Response = response;

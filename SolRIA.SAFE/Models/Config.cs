@@ -6,4 +6,8 @@ public sealed class Config
     public string CredentialID { get; set; }
     public string AccessToken { get; set; }
     public string RefreshToken { get; set; }
+
+    public string CertStatus { get; set; }
+    public string CertAlgo { get; set; }
+    public string CertLen { get; set; }
 }
