@@ -131,6 +131,20 @@ public static class DocumentSign
         databaseService.UpdateBasicAuth(new BasicAuth { ClientName = clientName, Password = password, Username = username });
     }
 
+    public static void UpdateCredentials(string configFolder, string credentialID, string accessToken, string refreshToken)
+    {
+        var serviceProvider = InitServices(configFolder);
+
+        var databaseService = serviceProvider.GetService<IDatabaseService>();
+
+        var config = databaseService.LoadConfig();
+        config.CredentialID = credentialID;
+        config.AccessToken = accessToken;
+        config.RefreshToken = refreshToken;
+
+        databaseService.UpdateConfig(config);
+    }
+
     public static void UpdateSignature(string configFolder, string contactInfo, string locationInfo, string reason, string timeStampServer, bool enableLtv, float signatureX, float signatureY, float signatureWidth, float signatureHeight, string signatureImage)
     {
         var serviceProvider = InitServices(configFolder);
