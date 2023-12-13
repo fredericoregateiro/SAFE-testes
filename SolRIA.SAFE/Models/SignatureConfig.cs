@@ -1,4 +1,4 @@
-﻿namespace SolRIA.SAFE.Models;
+﻿namespace SolRIA.Sign.SAFE.Models;
 
 public class SignatureConfig
 {

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "SolRIA.DesktopOauth": {
+      "commandName": "Project",
+      "commandLineArgs": "-configFolder \"E:\\Faturação eletronica\\Assinatura eletronica SAFE\\tests\" -nif \"510958362\" -email \"suporte@solria.pt\" -info \"SolRIA\" -password \"2C06FF182EEE4AC7AC1A260390FCC068\" -title \"SolRIA - SAFE\" -testMode -width 800 -height 800"
+    }
+  }
+}

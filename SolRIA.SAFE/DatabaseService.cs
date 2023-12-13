@@ -1,7 +1,6 @@
 ﻿using Dapper;
 using Microsoft.Data.Sqlite;
 using SolRIA.SAFE.Interfaces;
-using SolRIA.SAFE.Models;
 using SolRIA.Sign.SAFE.Interfaces;
 using SolRIA.Sign.SAFE.Models;
 using System.Security.Cryptography.X509Certificates;
@@ -35,18 +34,32 @@ public class DatabaseService : IDatabaseService
         // run the versions files
     }
 
-    public Config LoadConfig()
+    public Config LoadConfig(string password)
     {
         using var connection = new SqliteConnection(_configuration.ConnectionString);
 
-        var config = connection.QueryFirstOrDefault<Config>("SELECT * FROM config;");
-
-        return config ??= new Config();
+        return LoadConfig(password, connection);
     }
 
-    public Config UpdateConfig(Config config)
+    private Config LoadConfig(string password, SqliteConnection connection)
+    {
+        var config = connection.QueryFirstOrDefault<Config>("SELECT * FROM config;");
+
+        config ??= new Config();
+
+        config.AccessToken = EncryptionHelpers.Decrypt(config.AccessToken, password);
+        config.RefreshToken = EncryptionHelpers.Decrypt(config.RefreshToken, password);
+
+        return config;
+    }
+
+    public Config UpdateConfig(Config config, string password)
     {
         using var connection = new SqliteConnection(_configuration.ConnectionString);
+
+        // encrypt the tokens
+        config.AccessToken = EncryptionHelpers.Encrypt(config.AccessToken, password);
+        config.RefreshToken = EncryptionHelpers.Encrypt(config.RefreshToken, password);
 
         // save the tokens
         if (config.Id == 0)
@@ -55,7 +68,7 @@ public class DatabaseService : IDatabaseService
                 INSERT INTO config 
                 (access_token,refresh_token,credential_id,cert_status,cert_algo,cert_len) VALUES 
                 (@AccessToken,@RefreshToken,@CredentialID,@CertStatus,@CertAlgo,@CertLen);
-            """);
+            """, config);
         }
         else
         {
@@ -68,7 +81,7 @@ public class DatabaseService : IDatabaseService
         }
 
         // return the new config
-        return connection.QueryFirstOrDefault<Config>("SELECT * FROM config;");
+        return LoadConfig(password, connection);
     }
 
     public SignatureConfig LoadSignatureConfig()
@@ -98,10 +111,10 @@ public class DatabaseService : IDatabaseService
 
             transaction.Commit();
         }
-        catch (Exception ex)
+        catch
         {
             transaction.Rollback();
-            throw ex;
+            throw;
         }
     }
 
@@ -124,16 +137,16 @@ public class DatabaseService : IDatabaseService
 
             connection.Execute("""
             INSERT INTO basic_auth 
-            (client_name,username,password) VALUES 
-            (@ClientName,@Username,@Password);
+            (client_name,client_id,username,password) VALUES 
+            (@ClientName,@ClientId,@Username,@Password);
             """, basicAuth, transaction);
 
             transaction.Commit();
         }
-        catch (Exception ex)
+        catch
         {
             transaction.Rollback();
-            throw ex;
+            throw;
         }
     }
 
@@ -170,10 +183,10 @@ public class DatabaseService : IDatabaseService
 
             transaction.Commit();
         }
-        catch (Exception ex)
+        catch
         {
             transaction.Rollback();
-            throw ex;
+            throw;
         }
 
         return LoadCertificates();

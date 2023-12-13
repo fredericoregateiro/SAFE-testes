@@ -1,13 +1,14 @@
+using Dapper;
 using SolRIA.SAFE.Models;
 using SolRIA.Sign.SAFE;
 using SolRIA.Sign.SAFE.Interfaces;
 using SolRIA.Sign.SAFE.Models;
-using Syncfusion.Drawing;
 using Syncfusion.Pdf.Graphics;
 using Syncfusion.Pdf.Parsing;
 using Syncfusion.Pdf.Security;
-using System.Diagnostics;
+using System.Drawing;
 using System.Net;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -42,7 +43,7 @@ public class SAFE_Connect : ISAFE_Connect
     /// </summary>
     public async Task<UpdateTokenResponseDto> UpdateToken(UpdateTokenRequestDto body, Config config)
     {
-        return await UpdateToken(body, config, CancellationToken.None);
+        return await UpdateToken(body, config, CancellationToken.None).ConfigureAwait(false);
     }
     public async Task<UpdateTokenResponseDto> UpdateToken(UpdateTokenRequestDto body, Config config, CancellationToken cancellationToken)
     {
@@ -64,16 +65,17 @@ public class SAFE_Connect : ISAFE_Connect
     /// Método que gera o url que será usado no pedido oauth
     /// </summary>
     /// <param name="creationRequest">Parametros usados na criação da conta do cliente</param>
-    /// <param name="clientId">O identificador do integrador, este id é fornecido pela AMA</param>
-    /// <param name="clientName">O nome do integrador, é fornecido pela AMA, em testes é clientTest</param>
     /// <returns>Url usado no pedido de autenticação oauth</returns>
-    public string CreateAccountUrl(AccountCreationRequest creationRequest, string clientId, string clientName)
+    public string CreateAccountUrl(AccountCreationRequest creationRequest)
     {
         // check the valid date
         if (string.IsNullOrWhiteSpace(creationRequest.Valid))
             creationRequest.Valid = AccountCreationRequest.FillValid();
 
-        var createAccountParams = $"?enterpriseNipc={creationRequest.NIF}$enterpriseAdditionalInfo={creationRequest.Info}$email={creationRequest.Email}$expirationDate={creationRequest.Valid}$signaturesLimit={creationRequest.Max}$creationClientName={clientName}";
+        if (string.IsNullOrWhiteSpace(creationRequest.Info) == false)
+            creationRequest.Info = Uri.EscapeDataString(creationRequest.Info);
+
+        var createAccountParams = $"?enterpriseNipc={creationRequest.NIF}$enterpriseAdditionalInfo={creationRequest.Info}$email={creationRequest.Email}$expirationDate={creationRequest.Valid}$signaturesLimit={creationRequest.Max}$creationClientName={_auth.ClientName}";
 
         // scopes obrigatórios para criar a conta pelo oauth
         var scopesList = new string[]
@@ -83,23 +85,26 @@ public class SAFE_Connect : ISAFE_Connect
             "http://interop.gov.pt/MDC/Cidadao/NomeApelido",
             "http://interop.gov.pt/MDC/Cidadao/DataNascimento",
             "http://interop.gov.pt/MDC/Cidadao/NIF",
-            $"http://interop.gov.pt/SAFE/createSignatureAccount{createAccountParams}"
+            $"http://interop.gov.pt/SAFE/createSignatureAccount{createAccountParams}",
         };
 
         // criar url com todos os scopes necessários separados por espaço
-        string scopesUrl = string.Join("%20", scopesList);
+        var scopesUrl = string.Join("%20", scopesList);
+        var baseAddress = _httpClientOauth.BaseAddress.AbsoluteUri;
 
-        return $"https://preprod.autenticacao.gov.pt/oauth/askauthorization?client_id={clientId}&scope={scopesUrl}&response_type=token";
+        return $"{baseAddress}/oauth/askauthorization?client_id={_auth.ClientId}&scope={scopesUrl}&response_type=token";
     }
 
-    public string ParseOauthResult(string url)
+    public MessageResult ParseOauthResult(string url)
     {
         if (string.IsNullOrWhiteSpace(url)) return null;
 
-        if (url.Contains("/Authorized#") == false) return null;
+        if (url.IndexOf("/Authorized#", StringComparison.OrdinalIgnoreCase) < 0) return null;
 
         // parse the url
-        /* https://preprod.autenticacao.gov.pt/OAuth/Authorized#
+
+        /* Sucesso
+         * https://preprod.autenticacao.gov.pt/OAuth/Authorized#
          * access_token=
          * &token_type=bearer
          * &expires_in=
@@ -107,10 +112,33 @@ public class SAFE_Connect : ISAFE_Connect
          * &refresh_token=
          */
 
-        var tokens = url.Split('#')[1].Split('&');
+        /*
+         * Erro
+         * https://preprod.autenticacao.gov.pt/oauth/authorized#error=XXXXX 
+         * XXXXX = invalid_request: quando é um pedido inválido por exemplo com campos obrigatórios vazios
+         * XXXXX = unauthorized_client: quando o id do cliente é inválido
+         * XXXXX = unsupported_grant_type: quando o grant_type passado não equivale a token
+         * XXXXX = cancelled: quando o utilizador cancela o login
+         */
+
+        //obter a url a partir do authorized#
+        var parameterStartIndex = url.IndexOf("#", StringComparison.OrdinalIgnoreCase) + 1;
+
+        // verificar existencia de erros
+        if (url.IndexOf("#error=", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            var error = url.Substring(parameterStartIndex);
+
+            return new MessageResult { Success = false, Message = error };
+        }
+
+        // obter os tokens enviados a partir do authorized#
+        var tokens = url.Substring(parameterStartIndex).Split('&');
 
         // só é necessário o access_token para continuar o processo de criação de conta
-        return tokens.Where(t => t.StartsWith("access_token")).First().Split('=')[1];
+        var token = tokens.First(t => t.StartsWith("access_token", StringComparison.OrdinalIgnoreCase)).Split('=')[1];
+
+        return new MessageResult { Success = true, Message = token };
     }
 
     /// <summary>
@@ -120,14 +148,14 @@ public class SAFE_Connect : ISAFE_Connect
     /// <returns>Credenciais de autenticação usados no pedido de leitura da conta <see cref="ReadAccount(AttributeManagerResult)"/> </returns>
     public async Task<AttributeManagerResult> SendCreateAccountRequest(string token)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, 
+        using var request = new HttpRequestMessage(HttpMethod.Post,
             "/oauthresourceserver/api/AttributeManager");
         request.Headers.TryAddWithoutValidation("accept", "*/*");
 
         var dto = new AttributeManagerRequest
         {
             Token = token,
-            AttributesName = new string[] { "http://interop.gov.pt/SAFE/createSignatureAccount" }
+            AttributesName = new string[] { "http://interop.gov.pt/SAFE/createSignatureAccount" },
         };
 
         var content = new StringContent(JsonSerializer.Serialize(dto));
@@ -158,7 +186,7 @@ public class SAFE_Connect : ISAFE_Connect
 
         var attributesResult = JsonSerializer.Deserialize<AttributeResult[]>(resultJson);
 
-        var attr = attributesResult.FirstOrDefault(a => a.Name.StartsWith("http://interop.gov.pt/SAFE/createSignatureAccount"));
+        var attr = attributesResult.FirstOrDefault(a => a.Name.StartsWith("http://interop.gov.pt/SAFE/createSignatureAccount", StringComparison.OrdinalIgnoreCase));
 
         return JsonSerializer.Deserialize<AccountCreationResult>(attr.Value);
     }
@@ -168,7 +196,7 @@ public class SAFE_Connect : ISAFE_Connect
     /// </summary>
     public async Task<string> CancelAccount(CancelCitizenAccountRequestDto body, Config config)
     {
-        return await CancelAccount(body, config, CancellationToken.None);
+        return await CancelAccount(body, config, CancellationToken.None).ConfigureAwait(false);
     }
     public async Task<string> CancelAccount(CancelCitizenAccountRequestDto body, Config config, CancellationToken cancellationToken)
     {
@@ -195,7 +223,7 @@ public class SAFE_Connect : ISAFE_Connect
     /// </summary>
     public async Task<InfoResponseDto> Info(Config config)
     {
-        return await Info(config, CancellationToken.None);
+        return await Info(config, CancellationToken.None).ConfigureAwait(false);
     }
     public async Task<InfoResponseDto> Info(Config config, CancellationToken cancellationToken)
     {
@@ -219,7 +247,7 @@ public class SAFE_Connect : ISAFE_Connect
     /// </summary>
     public async Task<CredentialsListResponseDto> ListCredential(CredentialsListRequestDto body, Config config)
     {
-        return await ListCredential(body, config, CancellationToken.None);
+        return await ListCredential(body, config, CancellationToken.None).ConfigureAwait(false);
     }
     public async Task<CredentialsListResponseDto> ListCredential(CredentialsListRequestDto body, Config config, CancellationToken cancellationToken)
     {
@@ -233,7 +261,7 @@ public class SAFE_Connect : ISAFE_Connect
         var objectResponse = await ReadObjectResponseAsync<CredentialsListResponseDto>(response).ConfigureAwait(false);
 
         GuardResultNotNull(response, objectResponse);
-
+            
         return objectResponse.Object;
     }
 
@@ -246,7 +274,7 @@ public class SAFE_Connect : ISAFE_Connect
     /// </summary>
     public async Task<CredentialsInfoResponseDto> InfoCredentials(CredentialsInfoRequestDto body, Config config)
     {
-        return await InfoCredentials(body, config, CancellationToken.None);
+        return await InfoCredentials(body, config, CancellationToken.None).ConfigureAwait(false);
     }
     public async Task<CredentialsInfoResponseDto> InfoCredentials(CredentialsInfoRequestDto body, Config config, CancellationToken cancellationToken)
     {
@@ -273,7 +301,7 @@ public class SAFE_Connect : ISAFE_Connect
     /// </summary>
     public async Task<string> Authorize(SignHashAuthorizationRequestDto body, Config config)
     {
-        return await Authorize(body, config, CancellationToken.None);
+        return await Authorize(body, config, CancellationToken.None).ConfigureAwait(false);
     }
     public async Task<string> Authorize(SignHashAuthorizationRequestDto body, Config config, CancellationToken cancellationToken)
     {
@@ -292,7 +320,7 @@ public class SAFE_Connect : ISAFE_Connect
         var headers = ReadHeaders(response);
 
         var responseData = response.Content == null ? null : await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        throw new ApiException("The HTTP status code of the response was not expected (" + (int)response.StatusCode + ").", response.StatusCode, responseData, headers, null);
+        throw new ApiException($"The HTTP status code of the response was not expected ({response.StatusCode}).", response.StatusCode, responseData, headers, innerException: null);
         // if (response.StatusCode == HttpStatusCode.Unauthorized) return "Unauthorized";
         // if (response.StatusCode == HttpStatusCode.BadRequest) return "Bad Request";
         // if (response.StatusCode == HttpStatusCode.InternalServerError) return "Internal Server Error";
@@ -314,7 +342,7 @@ public class SAFE_Connect : ISAFE_Connect
     /// </summary>
     public async Task<SignHashAuthorizationResponseDto> VerifyAuth(string processId, Config config)
     {
-        return await VerifyAuth(processId, config, CancellationToken.None);
+        return await VerifyAuth(processId, config, CancellationToken.None).ConfigureAwait(false);
     }
     public async Task<SignHashAuthorizationResponseDto> VerifyAuth(string processId, Config config, CancellationToken cancellationToken)
     {
@@ -338,7 +366,7 @@ public class SAFE_Connect : ISAFE_Connect
     /// </summary>
     public async Task<string> SignHash(SignHashRequestDto body, Config config)
     {
-        return await SignHash(body, config, CancellationToken.None);
+        return await SignHash(body, config, CancellationToken.None).ConfigureAwait(false);
     }
     public async Task<string> SignHash(SignHashRequestDto body, Config config, CancellationToken cancellationToken)
     {
@@ -357,7 +385,7 @@ public class SAFE_Connect : ISAFE_Connect
         var headers = ReadHeaders(response);
 
         var responseData = response.Content == null ? null : await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        throw new ApiException("The HTTP status code of the response was not expected (" + (int)response.StatusCode + ").", response.StatusCode, responseData, headers, null);
+        throw new ApiException($"The HTTP status code of the response was not expected ({(int)response.StatusCode}).", response.StatusCode, responseData, headers, innerException: null);
         // if (response.StatusCode == HttpStatusCode.Unauthorized) return "Unauthorized";
         // if (response.StatusCode == HttpStatusCode.BadRequest) return "Bad Request";
         // if (response.StatusCode == HttpStatusCode.InternalServerError) return "Internal Server Error";
@@ -381,7 +409,7 @@ public class SAFE_Connect : ISAFE_Connect
     /// </summary>
     public async Task<SignHashResponseDto> VerifyHash(string processId, Config config)
     {
-        return await VerifyHash(processId, config, CancellationToken.None);
+        return await VerifyHash(processId, config, CancellationToken.None).ConfigureAwait(false);
     }
     public async Task<SignHashResponseDto> VerifyHash(string processId, Config config, CancellationToken cancellationToken)
     {
@@ -438,7 +466,7 @@ public class SAFE_Connect : ISAFE_Connect
             var headers = ReadHeaders(response);
 
             var responseData = response.Content == null ? null : await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            throw new ApiException("The HTTP status code of the response was not expected (" + (int)response.StatusCode + ").", response.StatusCode, responseData, headers, null);
+            throw new ApiException($"The HTTP status code of the response was not expected ({(int)response.StatusCode}).", response.StatusCode, responseData, headers, innerException: null);
         }
 
         var responseText = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -448,8 +476,8 @@ public class SAFE_Connect : ISAFE_Connect
             {
                 Converters =
                 {
-                    new DateTimeFormat()
-                }
+                    new DateTimeFormat(),
+                },
             };
             var typedBody = JsonSerializer.Deserialize<T>(responseText, serializerOptions);
             return new ObjectResponseResult<T>(typedBody, responseText);
@@ -466,7 +494,7 @@ public class SAFE_Connect : ISAFE_Connect
 
     private static Dictionary<string, IEnumerable<string>> ReadHeaders(HttpResponseMessage response)
     {
-        var headers = Enumerable.ToDictionary(response.Headers, h => h.Key, h => h.Value);
+        var headers = Enumerable.ToDictionary(response.Headers, h => h.Key, h => h.Value, StringComparer.OrdinalIgnoreCase);
         if (response.Content != null && response.Content.Headers != null)
         {
             foreach (var item_ in response.Content.Headers)
@@ -483,10 +511,10 @@ public class SAFE_Connect : ISAFE_Connect
         // read the request headers
         var headers = ReadHeaders(response);
 
-        throw new ApiException("Response was null which was not expected.", response.StatusCode, objectResponse.Text, headers, null);
+        throw new ApiException("Response was null which was not expected.", response.StatusCode, objectResponse.Text, headers, innerException: null);
     }
 
-    public byte[] CreatePdfEmptySignature(Stream documentStream, Stream inputFileStream, List<X509Certificate2> certificates, SignatureConfig signatureConfig)
+    public byte[] CreatePdfEmptySignature(Stream documentStream, Stream inputFileStream, IList<X509Certificate2> certificates, SignatureConfig signatureConfig)
     {
         //Load an existing PDF document.
         var loadedDocument = new PdfLoadedDocument(documentStream);
@@ -496,10 +524,10 @@ public class SAFE_Connect : ISAFE_Connect
                 new PointF(signatureConfig.SignatureX, signatureConfig.SignatureY),
                 new SizeF(signatureConfig.SignatureWidth, signatureConfig.SignatureHeight));
 
-        var signature = new PdfSignature(loadedDocument, loadedDocument.Pages[0], null, "Signature")
+        var signature = new PdfSignature(loadedDocument, loadedDocument.Pages[0], certificate: null, "Signature")
         {
             //Sets the signature information.
-            Bounds = signatureBounds
+            Bounds = signatureBounds,
         };
 
         signature.Settings.CryptographicStandard = CryptographicStandard.CADES;
@@ -529,21 +557,21 @@ public class SAFE_Connect : ISAFE_Connect
 
         signature.EnableLtv = signatureConfig.EnableLtv;
         if (signatureConfig.EnableLtv)
-            signature.CreateLongTermValidity(certificates);
+            signature.CreateLongTermValidity(certificates.AsList());
 
         //Create an external signer.
         var emptySignature = new SignEmpty();
         //Add public certificates.
-        signature.AddExternalSigner(emptySignature, certificates, null);
+        signature.AddExternalSigner(emptySignature, certificates.AsList(), Ocsp: null);
 
         loadedDocument.Save(inputFileStream);
 
         //Close the PDF document.
-        loadedDocument.Close(true);
+        loadedDocument.Close(completely: true);
 
         return emptySignature.Message;
     }
-    public void CreatePdfSigned(string signedHash, Stream inputFileStream, Stream outputFileStream, List<X509Certificate2> certificates)
+    public void CreatePdfSigned(string signedHash, Stream inputFileStream, Stream outputFileStream, IList<X509Certificate2> certificates)
     {
         //Create an external signer with a signed hash message.
         var externalSigner = new ExternalSigner(signedHash);
@@ -551,7 +579,7 @@ public class SAFE_Connect : ISAFE_Connect
         string pdfPassword = string.Empty;
 
         // replace an empty signature.
-        PdfSignature.ReplaceEmptySignature(inputFileStream, pdfPassword, outputFileStream, "Signature", externalSigner, certificates, true);
+        PdfSignature.ReplaceEmptySignature(inputFileStream, pdfPassword, outputFileStream, "Signature", externalSigner, certificates.AsList(), isEncodeSignature: true);
         outputFileStream.Position = 0;
     }
 

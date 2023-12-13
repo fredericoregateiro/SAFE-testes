@@ -2,15 +2,17 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using SolRIA.SAFE;
 using SolRIA.SAFE.Interfaces;
+using SolRIA.SAFE.Models;
 using SolRIA.Sign.SAFE.Interfaces;
 using SolRIA.Sign.SAFE.Models;
 using System.Diagnostics;
+using System.Security.Cryptography.X509Certificates;
 
 namespace SAFE;
 
-public static class DocumentSign
+public class DocumentSign
 {
-    private static IServiceProvider InitServices(string configFolder, bool testMode = true)
+    private IServiceProvider InitServices(string configFolder, bool testMode = true)
     {
         //start the services container
         return new HostBuilder()
@@ -41,8 +43,15 @@ public static class DocumentSign
             .Services;
     }
 
-    public static async Task SignDocument(string configFolder, string pdfPath, bool testMode)
+    public void SignDocument(string configFolder, string pdfPath, string password, bool testMode)
     {
+        SignDocumentAsync(configFolder, pdfPath, password, testMode).Wait();
+    }
+
+    public async Task SignDocumentAsync(string configFolder, string pdfPath, string password, bool testMode)
+    {
+        Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense("Ngo9BigBOggjHTQxAR8/V1NHaF5cXmVCf1FpRmJGdld5fUVHYVZUTXxaS00DNHVRdkdgWXZfeHVRRGBcVER/Xko=");
+
         var serviceProvider = InitServices(configFolder, testMode);
 
         var client = serviceProvider.GetService<ISAFE_Connect>();
@@ -50,7 +59,7 @@ public static class DocumentSign
 
         // load the configuration objects
         var auth = databaseService.LoadBasicAuth();
-        var config = databaseService.LoadConfig();
+        var config = databaseService.LoadConfig(password);
         var certificates = databaseService.LoadCertificates();
         var signatureConfig = databaseService.LoadSignatureConfig();
 
@@ -58,26 +67,10 @@ public static class DocumentSign
         client.Init(auth);
 
         // check for valid tokens, refresh if needed
-        try
-        {
-            await SAFE_ListCredential(auth.ClientName, config, client);
-        }
-        catch (ApiException ex) when (ex.StatusCode is
-            System.Net.HttpStatusCode.Unauthorized or
-            System.Net.HttpStatusCode.BadRequest)
-        {
-            // refresh token
-            await SAFE_RefreshToken(config, auth.ClientName, client, databaseService);
-        }
+        await CheckTokens(password, client, databaseService, auth, config).ConfigureAwait(false);
 
         // check for valid algo and certificates
-        if (string.IsNullOrWhiteSpace(config.CertAlgo) || certificates == null || certificates.Count == 0)
-        {
-            await SAFE_InfoCredentials(config, auth.ClientName, client, databaseService);
-
-            certificates = databaseService.LoadCertificates();
-            config = databaseService.LoadConfig();
-        }
+        (config, certificates) = await CheckCertificates(password, client, databaseService, certificates, auth, config).ConfigureAwait(false);
 
         // get the stream from a documents
         var folder = Path.GetDirectoryName(pdfPath);
@@ -101,19 +94,13 @@ public static class DocumentSign
         // processId must be unique to one sign session
         var processId = Guid.NewGuid().ToString();
 
-        await SAFE_Authorize(hashes, documentNames, config, processId, auth.ClientName, client);
+        await SAFE_Authorize(hashes, documentNames, config, processId, auth.ClientName, client).ConfigureAwait(false);
 
-        Thread.Sleep(1000);
+        var sad = await SAFE_VerifyAuth(processId, config, client).ConfigureAwait(false);
 
-        var sad = await SAFE_VerifyAuth(processId, config, client);
+        await SAFE_SignHash(sad, hashes, config, processId, auth.ClientName, client).ConfigureAwait(false);
 
-        Thread.Sleep(1000);
-
-        await SAFE_SignHash(sad, hashes, config, processId, auth.ClientName, client);
-
-        Thread.Sleep(1000);
-
-        var signedHash = await SAFE_VerifyHash(processId, config, client);
+        var signedHash = await SAFE_VerifyHash(processId, config, client).ConfigureAwait(false);
 
         // after loading the hash, create the file with the signed hash returned from the service
         client.CreatePdfSigned(signedHash, inputFileStream, signedFileStream, certificates);
@@ -123,34 +110,78 @@ public static class DocumentSign
         File.Delete(Path.Combine(folder, $"{filename}-empty.pdf"));
     }
 
-    public static void UpdateAuth(string configFolder, string clientName, string username, string password)
+    private async Task CheckTokens(string password, ISAFE_Connect client, IDatabaseService databaseService, BasicAuth auth, Config config)
     {
-        var serviceProvider = InitServices(configFolder);
-
-        var databaseService = serviceProvider.GetService<IDatabaseService>();
-        databaseService.UpdateBasicAuth(new BasicAuth { ClientName = clientName, Password = password, Username = username });
+        try
+        {
+            await SAFE_ListCredential(auth.ClientName, config, client).ConfigureAwait(false);
+        }
+        catch (ApiException ex) when (ex.StatusCode is
+            System.Net.HttpStatusCode.Unauthorized or
+            System.Net.HttpStatusCode.BadRequest)
+        {
+            // refresh token
+            await SAFE_RefreshToken(config, auth.ClientName, password, client, databaseService).ConfigureAwait(false);
+        }
     }
 
-    public static void UpdateCredentials(string configFolder, string credentialID, string accessToken, string refreshToken)
+    private async Task<(Config, List<X509Certificate2>)> CheckCertificates(string password, ISAFE_Connect client, IDatabaseService databaseService, List<X509Certificate2> certificates, BasicAuth auth, Config config)
+    {
+        if (string.IsNullOrWhiteSpace(config.CertAlgo) || certificates == null || certificates.Count == 0)
+        {
+            await SAFE_InfoCredentials(config, auth.ClientName, password, client, databaseService).ConfigureAwait(false);
+
+            certificates = databaseService.LoadCertificates();
+            config = databaseService.LoadConfig(password);
+        }
+
+        return (config, certificates);
+    }
+
+    public void UpdateAuth(string configFolder, string clientName, string clientId, string username, string password)
+    {
+        var serviceProvider = InitServices(configFolder);
+
+        var databaseService = serviceProvider.GetService<IDatabaseService>();
+        databaseService.UpdateBasicAuth(new BasicAuth { ClientName = clientName, ClientId = clientId, Password = password, Username = username });
+    }
+
+    public BasicAuth GetAuth(string configFolder)
+    {
+        var serviceProvider = InitServices(configFolder);
+        var databaseService = serviceProvider.GetService<IDatabaseService>();
+
+        return databaseService.LoadBasicAuth();
+    }
+
+    public void UpdateCredentials(string configFolder, string credentialID, string accessToken, string refreshToken, string password)
     {
         var serviceProvider = InitServices(configFolder);
 
         var databaseService = serviceProvider.GetService<IDatabaseService>();
 
-        var config = databaseService.LoadConfig();
+        var config = databaseService.LoadConfig(password);
         config.CredentialID = credentialID;
         config.AccessToken = accessToken;
         config.RefreshToken = refreshToken;
 
-        databaseService.UpdateConfig(config);
+        databaseService.UpdateConfig(config, password);
     }
 
-    public static void UpdateSignature(string configFolder, string contactInfo, string locationInfo, string reason, string timeStampServer, bool enableLtv, float signatureX, float signatureY, float signatureWidth, float signatureHeight, string signatureImage)
+    public Config GetCredentials(string configFolder, string password)
+    {
+        var serviceProvider = InitServices(configFolder);
+        var databaseService = serviceProvider.GetService<IDatabaseService>();
+
+        return databaseService.LoadConfig(password);
+    }
+
+    public void UpdateSignature(string configFolder, string contactInfo, string locationInfo, string reason, string timeStampServer, bool enableLtv, float signatureX, float signatureY, float signatureWidth, float signatureHeight, string signatureImage)
     {
         var serviceProvider = InitServices(configFolder);
 
         var databaseService = serviceProvider.GetService<IDatabaseService>();
-        databaseService.UpdateSignatureConfig(new SolRIA.SAFE.Models.SignatureConfig
+        databaseService.UpdateSignatureConfig(new SignatureConfig
         {
             ContactInfo = contactInfo,
             LocationInfo = locationInfo,
@@ -165,9 +196,116 @@ public static class DocumentSign
         });
     }
 
-    private static async Task SAFE_Info(Config config, ISAFE_Connect client)
+    public SignatureConfig GetSignature(string configFolder)
     {
-        var response = await client.Info(config);
+        var serviceProvider = InitServices(configFolder);
+        var databaseService = serviceProvider.GetService<IDatabaseService>();
+
+        return databaseService.LoadSignatureConfig();
+    }
+
+    public string BuildAuthUrl(string configFolder, string nif, string email, string info)
+    {
+        var serviceProvider = InitServices(configFolder);
+
+        var client = serviceProvider.GetService<ISAFE_Connect>();
+        var databaseService = serviceProvider.GetService<IDatabaseService>();
+
+        var basicAuth = databaseService.LoadBasicAuth();
+        client.Init(basicAuth);
+
+        var body = new AccountCreationRequest
+        {
+            Email = email,
+            NIF = nif,
+            Info = info,
+            Valid = AccountCreationRequest.FillValid()
+        };
+
+        return client.CreateAccountUrl(body);
+    }
+
+    public async Task<MessageResult> CreateAccountAsync(string configFolder, string url, string password)
+    {
+        try
+        {
+            var serviceProvider = InitServices(configFolder);
+
+            var client = serviceProvider.GetService<ISAFE_Connect>();
+            var databaseService = serviceProvider.GetService<IDatabaseService>();
+
+            var basicAuth = databaseService.LoadBasicAuth();
+            client.Init(basicAuth);
+
+            var token = client.ParseOauthResult(url);
+
+            if (token.Success == false)
+            {
+                return new MessageResult { Success = false, Message = token.Message };
+            }
+
+            if (string.IsNullOrWhiteSpace(token.Message))
+            {
+                return new MessageResult { Success = false, Message = "Não foi possível ler o url de autenticação" };
+            }
+
+            var accountRequest = await client.SendCreateAccountRequest(token.Message).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(accountRequest?.Token) || string.IsNullOrWhiteSpace(accountRequest?.AuthenticationContextId))
+            {
+                return new MessageResult { Success = false, Message = "Não foi possível ler o identificador do processo de autenticação" };
+            }
+
+            // esperar 15s depois do pedido de criação de conta
+            // "SAFE Documento de integração.pdf" 4.1.1.4 (Fluxo de Criação de conta) - ponto 15
+            await Task.Delay(15000).ConfigureAwait(false);
+
+            AccountCreationResult accountResult = null;
+            // verificar se os tokens foram devolvidos, caso contrário esperar 2s até a um máximo de 30 tentativas = 60s
+            var attemptNumber = 1;
+            while (string.IsNullOrWhiteSpace(accountResult?.AccessToken) && attemptNumber <= 30)
+            {
+                await Task.Delay(2000).ConfigureAwait(false);
+
+                accountResult = await client.ReadAccount(accountRequest).ConfigureAwait(false);
+
+                // check for error
+                if (string.IsNullOrWhiteSpace(accountResult?.Error) == false)
+                {
+                    return new MessageResult { Success = false, Message = $"{accountResult.Error} {accountResult.ErrorDescription}" };
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(accountResult?.AccessToken))
+            {
+                return new MessageResult { Success = false, Message = "Não foi possível obter os tokens de acesso" };
+            }
+
+            // guardar os tokens
+            var config = databaseService.LoadConfig(password);
+            config.AccessToken = accountResult.AccessToken;
+            config.RefreshToken = accountResult.RefreshToken;
+
+            // obter o credential ID com o access token recebido
+            var credentialID = await SAFE_ListCredential(basicAuth.ClientName, config, client).ConfigureAwait(false);
+
+            // guardar o credential ID
+            config.CredentialID = credentialID;
+
+            // guardar a configuração
+            databaseService.UpdateConfig(config, password);
+
+            return new MessageResult { Success = true };
+        }
+        catch (Exception ex)
+        {
+            return new MessageResult { Success = false, Message = ex.Message };
+        }
+    }
+
+    private async Task SAFE_Info(Config config, ISAFE_Connect client)
+    {
+        var response = await client.Info(config).ConfigureAwait(false);
 
         Debug.WriteLine("Description: {0}", response.Description);
         Debug.WriteLine("Name: {0}", response.Name);
@@ -189,7 +327,7 @@ public static class DocumentSign
         }
     }
 
-    private static async Task SAFE_RefreshToken(Config config, string clientName, ISAFE_Connect client, IDatabaseService databaseService)
+    private async Task SAFE_RefreshToken(Config config, string clientName, string password, ISAFE_Connect client, IDatabaseService databaseService)
     {
         var body = new UpdateTokenRequestDto
         {
@@ -198,32 +336,29 @@ public static class DocumentSign
             {
                 ClientName = clientName,
                 ProcessId = Guid.NewGuid().ToString(),
-            }
+            },
         };
 
-        var response = await client.UpdateToken(body, config);
-
-        Debug.WriteLine("NewAccessToken: {0}", response.NewAccessToken);
-        Debug.WriteLine("NewRefreshToken: {0}", response.NewRefreshToken);
+        var response = await client.UpdateToken(body, config).ConfigureAwait(false);
 
         config.AccessToken = response.NewAccessToken;
         config.RefreshToken = response.NewRefreshToken;
 
-        databaseService.UpdateConfig(config);
+        databaseService.UpdateConfig(config, password);
     }
 
-    private static async Task<string> SAFE_ListCredential(string clientName, Config config, ISAFE_Connect client)
+    private async Task<string> SAFE_ListCredential(string clientName, Config config, ISAFE_Connect client)
     {
         var body = new CredentialsListRequestDto
         {
             ClientData = new ClientDataRequestBaseDto
             {
                 ProcessId = Guid.NewGuid().ToString(),
-                ClientName = clientName
-            }
+                ClientName = clientName,
+            },
         };
 
-        var response = await client.ListCredential(body, config);
+        var response = await client.ListCredential(body, config).ConfigureAwait(false);
 
         Debug.WriteLine("CredentialIDs:");
         foreach (var item in response.CredentialIDs)
@@ -234,7 +369,7 @@ public static class DocumentSign
         return response.CredentialIDs.FirstOrDefault();
     }
 
-    private static async Task SAFE_InfoCredentials(Config config, string clientName, ISAFE_Connect client, IDatabaseService databaseService)
+    private async Task SAFE_InfoCredentials(Config config, string clientName, string password, ISAFE_Connect client, IDatabaseService databaseService)
     {
         var body = new CredentialsInfoRequestDto
         {
@@ -243,14 +378,14 @@ public static class DocumentSign
             ClientData = new ClientDataRequestBaseDto
             {
                 ProcessId = Guid.NewGuid().ToString(),
-                ClientName = clientName
-            }
+                ClientName = clientName,
+            },
         };
 
         Debug.WriteLine("Call with CredentialID: {0}", body.CredentialID);
         Debug.WriteLine("Call with ProcessId: {0}", body.ClientData.ProcessId);
 
-        var response = await client.InfoCredentials(body, config);
+        var response = await client.InfoCredentials(body, config).ConfigureAwait(false);
 
         Debug.WriteLine("AuthMode: {0}", response.AuthMode);
         Debug.WriteLine("Multisign: {0}", response.Multisign);
@@ -262,7 +397,7 @@ public static class DocumentSign
         config.CertLen = response.Key.Len;
         config.CertStatus = response.Key.Status;
 
-        databaseService.UpdateConfig(config);
+        databaseService.UpdateConfig(config, password);
 
         var certificates = response.Cert.Certificates.Select((c, i) => new Certificate
         {
@@ -273,7 +408,7 @@ public static class DocumentSign
         databaseService.UpdateCertificates(certificates);
     }
 
-    private static async Task SAFE_Authorize(string[] hashes, string[] documentNames, Config config, string processId, string clientName, ISAFE_Connect client)
+    private async Task SAFE_Authorize(string[] hashes, string[] documentNames, Config config, string processId, string clientName, ISAFE_Connect client)
     {
         var body = new SignHashAuthorizationRequestDto
         {
@@ -288,20 +423,24 @@ public static class DocumentSign
             Hashes = hashes
         };
 
-        await client.Authorize(body, config);
+        await client.Authorize(body, config).ConfigureAwait(false);
     }
 
-    private static async Task<string> SAFE_VerifyAuth(string processId, Config config, ISAFE_Connect client)
+    private async Task<string> SAFE_VerifyAuth(string processId, Config config, ISAFE_Connect client)
     {
-        var response = await client.VerifyAuth(processId, config);
+        await Task.Delay(1000).ConfigureAwait(false);
+
+        var response = await client.VerifyAuth(processId, config).ConfigureAwait(false);
 
         Debug.WriteLine("SAD: {0}", response.Sad);
 
         return response.Sad;
     }
 
-    private static async Task SAFE_SignHash(string sad, string[] hashes, Config config, string processId, string clientName, ISAFE_Connect client)
+    private async Task SAFE_SignHash(string sad, string[] hashes, Config config, string processId, string clientName, ISAFE_Connect client)
     {
+        await Task.Delay(1000).ConfigureAwait(false);
+
         var body = new SignHashRequestDto
         {
             Sad = sad,
@@ -316,12 +455,14 @@ public static class DocumentSign
         };
 
         Console.WriteLine("ProcessId: {0}", body.ClientData.ProcessId);
-        await client.SignHash(body, config);
+        await client.SignHash(body, config).ConfigureAwait(false);
     }
 
-    private static async Task<string> SAFE_VerifyHash(string processId, Config config, ISAFE_Connect client)
+    private async Task<string> SAFE_VerifyHash(string processId, Config config, ISAFE_Connect client)
     {
-        var response = await client.VerifyHash(processId, config);
+        await Task.Delay(1000).ConfigureAwait(false);
+
+        var response = await client.VerifyHash(processId, config).ConfigureAwait(false);
 
         Debug.WriteLine("Signatures:");
         foreach (var item in response.Signatures)

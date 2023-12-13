@@ -5,7 +5,18 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SolRIA.SAFE", "SolRIA.SAFE\SolRIA.SAFE.csproj", "{7A6CA6CB-0C29-4F0F-AA05-DDB1EA422EB7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SolRIA.Tests", "SolRIA.Tests\SolRIA.Tests.csproj", "{4B8BFCCA-BC42-408E-9DD8-6CB1165BEE6D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SolRIA.Tests", "SolRIA.Tests\SolRIA.Tests.csproj", "{4B8BFCCA-BC42-408E-9DD8-6CB1165BEE6D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{694E29C0-83FE-47D5-9EEB-92C64B738DA7}"
+	ProjectSection(SolutionItems) = preProject
+		.editorconfig = .editorconfig
+	EndProjectSection
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SolRIA.SAFE.CLI", "SolRIA.SAFE.CLI\SolRIA.SAFE.CLI.csproj", "{5104F2E7-1804-4391-BCB0-B7F1342E7AFC}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SolRIA.SAFE2", "SolRIA.SAFE2\SolRIA.SAFE2.csproj", "{531FCE9D-A11D-4F4D-AFCF-69A803D1C303}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SolRIA.DesktopOauth", "SolRIA.DesktopOauth\SolRIA.DesktopOauth.csproj", "{EF8D9A16-1404-4977-9BD7-26A99D3C3DAE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,8 +32,23 @@ Global
 		{4B8BFCCA-BC42-408E-9DD8-6CB1165BEE6D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4B8BFCCA-BC42-408E-9DD8-6CB1165BEE6D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4B8BFCCA-BC42-408E-9DD8-6CB1165BEE6D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5104F2E7-1804-4391-BCB0-B7F1342E7AFC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5104F2E7-1804-4391-BCB0-B7F1342E7AFC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5104F2E7-1804-4391-BCB0-B7F1342E7AFC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5104F2E7-1804-4391-BCB0-B7F1342E7AFC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{531FCE9D-A11D-4F4D-AFCF-69A803D1C303}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{531FCE9D-A11D-4F4D-AFCF-69A803D1C303}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{531FCE9D-A11D-4F4D-AFCF-69A803D1C303}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{531FCE9D-A11D-4F4D-AFCF-69A803D1C303}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EF8D9A16-1404-4977-9BD7-26A99D3C3DAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EF8D9A16-1404-4977-9BD7-26A99D3C3DAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EF8D9A16-1404-4977-9BD7-26A99D3C3DAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EF8D9A16-1404-4977-9BD7-26A99D3C3DAE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {2199753C-9ED9-4660-BC7E-C7224ABCC540}
 	EndGlobalSection
 EndGlobal

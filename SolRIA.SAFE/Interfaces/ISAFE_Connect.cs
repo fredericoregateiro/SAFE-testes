@@ -8,8 +8,8 @@ public interface ISAFE_Connect
 {
     void Init(BasicAuth auth);
 
-    string CreateAccountUrl(AccountCreationRequest creationRequest, string clientId, string clientName);
-    string ParseOauthResult(string url);
+    string CreateAccountUrl(AccountCreationRequest creationRequest);
+    MessageResult ParseOauthResult(string url);
     Task<AttributeManagerResult> SendCreateAccountRequest(string token);
     Task<AccountCreationResult> ReadAccount(AttributeManagerResult attribute);
 
@@ -40,7 +40,7 @@ public interface ISAFE_Connect
     Task<SignHashResponseDto> VerifyHash(string processId, Config config);
     Task<SignHashResponseDto> VerifyHash(string processId, Config config, CancellationToken cancellationToken);
 
-    byte[] CreatePdfEmptySignature(Stream documentStream, Stream inputFileStream, List<X509Certificate2> certificates, SignatureConfig signatureConfig);
-    void CreatePdfSigned(string signedHash, Stream inputFileStream, Stream outputFileStream, List<X509Certificate2> certificates);
+    byte[] CreatePdfEmptySignature(Stream documentStream, Stream inputFileStream, IList<X509Certificate2> certificates, SignatureConfig signatureConfig);
+    void CreatePdfSigned(string signedHash, Stream inputFileStream, Stream outputFileStream, IList<X509Certificate2> certificates);
     string CalculateHash(byte[] message);
 }
