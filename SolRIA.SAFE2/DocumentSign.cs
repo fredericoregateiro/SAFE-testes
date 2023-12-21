@@ -373,7 +373,7 @@ public class DocumentSign
             // calculate the has of the pdf document with a empty signature
             var hashes = new string[]
             {
-            client.CalculateHash(initialHash),
+                client.CalculateHash(initialHash),
             };
 
             // get the original filename

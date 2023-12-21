@@ -22,9 +22,9 @@ namespace SolRIA.DesktopOauth
         public MessageResult MessageResult { get; set; }
 
         private string _configFolder, _nif, _email, _info, _password;
-        private bool _testMode;
+        private bool _testMode, _logUrl;
         private DocumentSign _documentSign;
-        public void Init(string configFolder, string nif, string email, string info, string password, bool testMode)
+        public void Init(string configFolder, string nif, string email, string info, string password, bool testMode, bool logUrl)
         {
             _configFolder = configFolder;
             _nif = nif;
@@ -32,6 +32,7 @@ namespace SolRIA.DesktopOauth
             _info = info;
             _password = password;
             _testMode = testMode;
+            _logUrl = logUrl;
         }
 
         private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -128,6 +129,11 @@ namespace SolRIA.DesktopOauth
             {
                 var url = web.Source.ToString();
                 addressBarText.Text = url;
+
+                if (_logUrl)
+                {
+                    App.Log(url);
+                }
 
                 if (url.Contains("/Authorized#"))
                 {

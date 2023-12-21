@@ -34,7 +34,7 @@ namespace SolRIA.DesktopOauth
                 if (fullscreen)
                     mainWindow.WindowState = WindowState.Maximized;
 
-                mainWindow.Init(folder, nif, email, info, password, testMode);
+                mainWindow.Init(folder, nif, email, info, password, testMode, logUrl);
 
                 Current.MainWindow = mainWindow;
                 //2C06FF182EEE4AC7AC1A260390FCC068
@@ -54,7 +54,7 @@ namespace SolRIA.DesktopOauth
 
         string folder, nif, email, info, password, title;
         private double width, height;
-        private bool fullscreen, testMode;
+        private bool fullscreen, testMode, logUrl;
         private void FillProperties(Dictionary<string, string> parameters)
         {
             parameters.TryGetValue("-configFolder", out folder);
@@ -72,6 +72,7 @@ namespace SolRIA.DesktopOauth
 
             testMode = parameters.ContainsKey("-testMode");
             fullscreen = parameters.ContainsKey("-fullscreen");
+            fullscreen = parameters.ContainsKey("-logUrl");
         }
         private Dictionary<string, string> ReadParameters(string[] args)
         {
@@ -110,9 +111,7 @@ namespace SolRIA.DesktopOauth
 
         public static void Log(string message)
         {
-            message += Environment.NewLine;
-
-            File.AppendAllText(Path.Combine(Path.GetTempPath(), "safe-logs.txt"), message);
+            File.AppendAllText(Path.Combine(Path.GetTempPath(), "safe-logs.txt"), string.Format("{0}: {1}{2}", DateTime.Now.ToString("yyyyMMdd HH:mm:ss"), message, Environment.NewLine));
         }
 
         public static void Log(Exception exception)
