@@ -13,8 +13,8 @@ public static class LogService
     /// <param name="message">The message to log</param>
     public static void Log(string message)
     {
-        File.AppendAllText(Path.Combine(Path.GetTempPath(), "safe-logs.txt"), 
-            string.Format(CultureInfo.CurrentCulture, "{0:yyyy-MM-dd HH:mm:ss.fff} {1}{2}", DateTime.Now, message, Environment.NewLine));
+        File.AppendAllText(Path.Combine(Path.GetTempPath(), "safe-requests-logs.txt"), 
+            string.Format(CultureInfo.CurrentCulture, "{0:yyyy-MM-dd HH:mm:ss.fff}: {1}{2}", DateTime.Now, message, Environment.NewLine));
     }
 
     /// <summary>

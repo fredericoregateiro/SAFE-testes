@@ -137,7 +137,7 @@ namespace SolRIA.DesktopOauth
 
                 if (url.Contains("/Authorized#"))
                 {
-                    MessageResult = await _documentSign.CreateAccountAsync(_configFolder, url, _password, _testMode);
+                    MessageResult = await _documentSign.CreateAccountAsync(_configFolder, url, _password, _testMode, _logUrl);
 
                     if (MessageResult == null || MessageResult.Success == false)
                     {

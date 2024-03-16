@@ -2,6 +2,8 @@
 
 public class SignatureConfig
 {
+    public string SyncfusionKey { get; set; }
+
     public string ContactInfo { get; set; }
     public string LocationInfo { get; set; }
     public string Reason { get; set; }

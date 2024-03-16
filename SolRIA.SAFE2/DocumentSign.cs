@@ -21,13 +21,13 @@ public class DocumentSign
         return databaseService;
     }
 
-    private ISAFE_Connect GetSAFE_Connect(bool testMode)
+    private ISAFE_Connect GetSAFE_Connect(bool testMode, bool log = false)
     {
-        var httpClient = new HttpClient
+        var httpClient = new HttpClient(new LoggingHandler(new HttpClientHandler(), log))
         {
             BaseAddress = new Uri(testMode ? "https://pprsafe.autenticacao.gov.pt" : "https://safe.autenticacao.gov.pt")
         };
-        var httpClientOauth = new HttpClient
+        var httpClientOauth = new HttpClient(new LoggingHandler(new HttpClientHandler(), log))
         {
             BaseAddress = new Uri(testMode ? "https://preprod.autenticacao.gov.pt" : "https://autenticacao.gov.pt")
         };
@@ -72,12 +72,13 @@ public class DocumentSign
     /// <param name="url">Url devolvido pelo serviço SAFE</param>
     /// <param name="password">Password que vai encriptar os tokens de acesso ao serviço</param>
     /// <param name="testMode">Usado ligar ao servidor de testes</param>
+    /// <param name="log">Fazer log dos pedidos http</param>
     /// <returns>Resultado da criação da conta no serviço SAFE</returns>
-    public async Task<MessageResult> CreateAccountAsync(string configFolder, string url, string password, bool testMode)
+    public async Task<MessageResult> CreateAccountAsync(string configFolder, string url, string password, bool testMode, bool log)
     {
         try
         {
-            var client = GetSAFE_Connect(testMode);
+            var client = GetSAFE_Connect(testMode, log);
             var databaseService = GetDatabaseService(configFolder);
 
             var basicAuth = databaseService.LoadBasicAuth();
@@ -351,6 +352,10 @@ public class DocumentSign
             var certificates = databaseService.LoadCertificates();
             var signatureConfig = databaseService.LoadSignatureConfig();
 
+            // load the syncfusion license key
+            if (string.IsNullOrWhiteSpace(signatureConfig.SyncfusionKey) == false)
+                Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense(signatureConfig.SyncfusionKey);
+
             // init the client
             client.Init(auth);
 
@@ -506,7 +511,7 @@ public class DocumentSign
     /// <param name="signatureWidth">Largura da imagem da assinatura</param>
     /// <param name="signatureHeight">Altura da imagem da assinatura</param>
     /// <param name="signatureImage">Caminho para a imagem a ser utilizada como visual da assinatura eletrónica</param>
-    public void UpdateSignature(string configFolder, string contactInfo, string locationInfo, string reason, string timeStampServer, bool enableLtv, float signatureX, float signatureY, float signatureWidth, float signatureHeight, string signatureImage)
+    public void UpdateSignature(string configFolder, string contactInfo, string locationInfo, string reason, string timeStampServer, bool enableLtv, float signatureX, float signatureY, float signatureWidth, float signatureHeight, string signatureImage, string syncfusionKey)
     {
         var databaseService = GetDatabaseService(configFolder);
         databaseService.UpdateSignatureConfig(new SignatureConfig
@@ -520,7 +525,8 @@ public class DocumentSign
             SignatureY = signatureY,
             SignatureWidth = signatureWidth,
             SignatureHeight = signatureHeight,
-            SignatureImage = System.IO.File.Exists(signatureImage) ? System.IO.File.ReadAllBytes(signatureImage) : null
+            SignatureImage = File.Exists(signatureImage) ? File.ReadAllBytes(signatureImage) : null,
+            SyncfusionKey = syncfusionKey
         });
     }
 

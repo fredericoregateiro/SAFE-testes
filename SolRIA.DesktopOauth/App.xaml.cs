@@ -72,7 +72,7 @@ namespace SolRIA.DesktopOauth
 
             testMode = parameters.ContainsKey("-testMode");
             fullscreen = parameters.ContainsKey("-fullscreen");
-            fullscreen = parameters.ContainsKey("-logUrl");
+            logUrl = parameters.ContainsKey("-logUrl");
         }
         private Dictionary<string, string> ReadParameters(string[] args)
         {
