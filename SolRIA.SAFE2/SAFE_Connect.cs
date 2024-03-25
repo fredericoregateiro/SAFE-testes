@@ -231,7 +231,7 @@ public class SAFE_Connect : ISAFE_Connect
         var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
         //valid response
-        if (response.StatusCode == HttpStatusCode.OK) return string.Empty;
+        if (response.StatusCode is HttpStatusCode.OK or HttpStatusCode.NoContent) return string.Empty;
 
         // error responses
         if (response.StatusCode == HttpStatusCode.Unauthorized) return "Unauthorized";

@@ -249,16 +249,16 @@ public class DocumentSign
                 return new MessageResult { Success = false, Message = "Não foi possível ler o url de autenticação" };
             }
 
+            // esperar 15s depois do pedido de criação de conta
+            // "SAFE Documento de integração.pdf" 4.1.1.4 (Fluxo de Criação de conta) - ponto 15
+            await Task.Delay(15000).ConfigureAwait(false);
+
             var accountRequest = await client.SendCreateAccountRequest(token.Message).ConfigureAwait(false);
 
             if (string.IsNullOrWhiteSpace(accountRequest?.Token) || string.IsNullOrWhiteSpace(accountRequest?.AuthenticationContextId))
             {
                 return new MessageResult { Success = false, Message = "Não foi possível ler o identificador do processo de autenticação" };
             }
-
-            // esperar 15s depois do pedido de criação de conta
-            // "SAFE Documento de integração.pdf" 4.1.1.4 (Fluxo de Criação de conta) - ponto 15
-            await Task.Delay(15000).ConfigureAwait(false);
 
             AccountCreationResult accountResult = null;
             // verificar se os tokens foram devolvidos, caso contrário esperar 2s até a um máximo de 30 tentativas = 60s
