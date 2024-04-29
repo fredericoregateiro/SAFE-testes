@@ -98,7 +98,7 @@ public class DocumentSign
 
             // esperar 15s depois do pedido de criação de conta
             // "SAFE Documento de integração.pdf" 4.1.1.4 (Fluxo de Criação de conta) - ponto 15
-            await Task.Delay(15000).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(16)).ConfigureAwait(false);
 
             var accountRequest = await client.SendCreateAccountRequest(token.Message).ConfigureAwait(false);
 
@@ -300,6 +300,9 @@ public class DocumentSign
 
             var basicAuth = databaseService.LoadBasicAuth();
             client.Init(basicAuth);
+
+            // check for valid tokens, refresh if needed
+            await CheckTokens(password, client, databaseService, basicAuth, config).ConfigureAwait(false);
 
             var body = new CancelCitizenAccountRequestDto
             {

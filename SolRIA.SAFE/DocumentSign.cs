@@ -50,8 +50,6 @@ public class DocumentSign
 
     public async Task SignDocumentAsync(string configFolder, string pdfPath, string password, bool testMode)
     {
-        Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense("Ngo9BigBOggjHTQxAR8/V1NHaF5cXmVCf1FpRmJGdld5fUVHYVZUTXxaS00DNHVRdkdgWXZfeHVRRGBcVER/Xko=");
-
         var serviceProvider = InitServices(configFolder, testMode);
 
         var client = serviceProvider.GetService<ISAFE_Connect>();
@@ -300,6 +298,41 @@ public class DocumentSign
         catch (Exception ex)
         {
             return new MessageResult { Success = false, Message = ex.Message };
+        }
+    }
+
+    public async Task<string> CancelAccountAsync(string configFolder, string password)
+    {
+        try
+        {
+            var serviceProvider = InitServices(configFolder);
+
+            var client = serviceProvider.GetService<ISAFE_Connect>();
+            var databaseService = serviceProvider.GetService<IDatabaseService>();
+
+            var config = databaseService.LoadConfig(password);
+
+            var basicAuth = databaseService.LoadBasicAuth();
+            client.Init(basicAuth);
+
+            // check for valid tokens, refresh if needed
+            await CheckTokens(password, client, databaseService, basicAuth, config).ConfigureAwait(false);
+
+            var body = new CancelCitizenAccountRequestDto
+            {
+                CredentialID = config.CredentialID,
+                ClientData = new ClientDataRequestBaseDto
+                {
+                    ClientName = basicAuth.ClientName,
+                    ProcessId = Guid.NewGuid().ToString(),
+                }
+            };
+
+            return await client.CancelAccount(body, config).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
         }
     }
 
