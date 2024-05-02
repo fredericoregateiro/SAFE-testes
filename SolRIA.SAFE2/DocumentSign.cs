@@ -432,7 +432,13 @@ public class DocumentSign
     {
         try
         {
-            await SAFE_ListCredential(auth.ClientName, config, client).ConfigureAwait(false);
+            var credentialID = await SAFE_ListCredential(auth.ClientName, config, client).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(config.CredentialID))
+            {
+                config.CredentialID = credentialID;
+                databaseService.UpdateConfig(config, password);
+            }
         }
         catch (ApiException ex) when (ex.StatusCode is
             System.Net.HttpStatusCode.Unauthorized or
