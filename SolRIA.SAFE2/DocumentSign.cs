@@ -138,6 +138,7 @@ public class DocumentSign
             config.RefreshToken = accountResult.RefreshToken;
             config.AccountExpirationDate = accountResult.AccountExpirationDate.ToString("yyyy-MM-dd HH:mm:ss");
             config.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            config.CredentialID = string.Empty;
 
             // guardar a configuração
             databaseService.UpdateConfig(config, password);

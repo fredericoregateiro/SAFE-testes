@@ -283,6 +283,7 @@ public class DocumentSign
             var config = databaseService.LoadConfig(password);
             config.AccessToken = accountResult.AccessToken;
             config.RefreshToken = accountResult.RefreshToken;
+            config.CredentialID = string.Empty;
 
             // guardar a configuração
             databaseService.UpdateConfig(config, password);
