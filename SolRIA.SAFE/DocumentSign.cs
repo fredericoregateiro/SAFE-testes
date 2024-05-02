@@ -249,7 +249,7 @@ public class DocumentSign
 
             // esperar 15s depois do pedido de criação de conta
             // "SAFE Documento de integração.pdf" 4.1.1.4 (Fluxo de Criação de conta) - ponto 15
-            await Task.Delay(15000).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
 
             var accountRequest = await client.SendCreateAccountRequest(token.Message).ConfigureAwait(false);
 
@@ -263,7 +263,7 @@ public class DocumentSign
             var attemptNumber = 1;
             while (string.IsNullOrWhiteSpace(accountResult?.AccessToken) && attemptNumber <= 30)
             {
-                await Task.Delay(2000).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 
                 accountResult = await client.ReadAccount(accountRequest).ConfigureAwait(false);
 
@@ -284,14 +284,29 @@ public class DocumentSign
             config.AccessToken = accountResult.AccessToken;
             config.RefreshToken = accountResult.RefreshToken;
 
-            // obter o credential ID com o access token recebido
-            var credentialID = await SAFE_ListCredential(basicAuth.ClientName, config, client).ConfigureAwait(false);
-
-            // guardar o credential ID
-            config.CredentialID = credentialID;
-
             // guardar a configuração
             databaseService.UpdateConfig(config, password);
+
+            // obter o credential ID com o access token recebido
+            attemptNumber = 1;
+            while (string.IsNullOrWhiteSpace(config.CredentialID) && attemptNumber <= 30)
+            {
+                try
+                {
+                    config.CredentialID = await SAFE_ListCredential(basicAuth.ClientName, config, client).ConfigureAwait(false);
+                }
+                catch { }
+
+                // verificar se o credentialID foi devolvidos, caso contrário esperar 2s até a um máximo de 30 tentativas = 60s
+                // "Guia rápido de utilização OAuth2.pdf" pág. 5 ponto 9
+                if (string.IsNullOrWhiteSpace(config.CredentialID))
+                    await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+
+                attemptNumber++;
+            }
+
+            // guardar o credential ID
+            databaseService.UpdateConfigCredentialID(config, password);
 
             return new MessageResult { Success = true };
         }

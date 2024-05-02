@@ -122,7 +122,7 @@ public class DocumentSign
                 // verificar se os tokens foram devolvidos, caso contrário esperar 2s até a um máximo de 30 tentativas = 60s
                 // "Guia rápido de utilização OAuth2.pdf" pág. 5 ponto 9
                 if (string.IsNullOrWhiteSpace(accountResult?.AccessToken))
-                    await Task.Delay(2000).ConfigureAwait(false);
+                    await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 
                 attemptNumber++;
             }
@@ -139,14 +139,30 @@ public class DocumentSign
             config.AccountExpirationDate = accountResult.AccountExpirationDate.ToString("yyyy-MM-dd HH:mm:ss");
             config.UpdatedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
 
-            // obter o credential ID com o access token recebido
-            var credentialID = await SAFE_ListCredential(basicAuth.ClientName, config, client).ConfigureAwait(false);
+            // guardar a configuração
+            databaseService.UpdateConfig(config, password);
 
-            // guardar o credential ID
-            config.CredentialID = credentialID;
+            // obter o credential ID com o access token recebido
+            attemptNumber = 1;
+            while (string.IsNullOrWhiteSpace(config.CredentialID) && attemptNumber <= 30)
+            {
+                try
+                {
+                    config.CredentialID = await SAFE_ListCredential(basicAuth.ClientName, config, client).ConfigureAwait(false);
+                }
+                catch { }
+
+                // verificar se o credentialID foi devolvidos, caso contrário esperar 2s até a um máximo de 30 tentativas = 60s
+                // "Guia rápido de utilização OAuth2.pdf" pág. 5 ponto 9
+                if (string.IsNullOrWhiteSpace(config.CredentialID))
+                    await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+
+                attemptNumber++;
+            }
 
             // guardar a configuração
             databaseService.UpdateConfig(config, password);
+
             // clear any certificates
             databaseService.ClearCertificates();
 
@@ -534,7 +550,7 @@ public class DocumentSign
     }
 
     /// <summary>
-    /// Obtém as informações guardadas no ficheiro de configuração sobre a assinatura digital pelo método <see cref="UpdateSignature(string, string, string, string, string, bool, float, float, float, float, string)"/>
+    /// Obtém as informações guardadas no ficheiro de configuração sobre a assinatura digital pelo método <see cref="UpdateSignature(string, string, string, string, string, bool, float, float, float, float, string, string)"/>
     /// </summary>
     /// <param name="configFolder">Caminho da pasta que contém o ficheiro de configuração</param>
     /// <returns>Objeto com as informações da assinatura</returns>

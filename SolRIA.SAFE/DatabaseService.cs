@@ -60,6 +60,7 @@ public class DatabaseService : IDatabaseService
         // encrypt the tokens
         config.AccessToken = EncryptionHelpers.Encrypt(config.AccessToken, password);
         config.RefreshToken = EncryptionHelpers.Encrypt(config.RefreshToken, password);
+        config.CredentialID = string.Empty;
 
         // save the tokens
         if (config.Id == 0)
@@ -79,6 +80,16 @@ public class DatabaseService : IDatabaseService
                 WHERE id=@Id;
             """, config);
         }
+
+        // return the new config
+        return LoadConfig(password, connection);
+    }
+
+    public Config UpdateConfigCredentialID(Config config, string password)
+    {
+        using var connection = new SqliteConnection(_configuration.ConnectionString);
+
+        connection.Execute("UPDATE config SET credential_id=@CredentialID WHERE id=@Id;", config);
 
         // return the new config
         return LoadConfig(password, connection);

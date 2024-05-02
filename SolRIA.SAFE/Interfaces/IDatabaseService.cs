@@ -9,6 +9,7 @@ public interface IDatabaseService
 
     Config LoadConfig(string password);
     Config UpdateConfig(Config config, string password);
+    Config UpdateConfigCredentialID(Config config, string password);
 
     SignatureConfig LoadSignatureConfig();
     void UpdateSignatureConfig(SignatureConfig signatureConfig);
